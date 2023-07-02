@@ -82,6 +82,14 @@ class API(object):
         query_string = self._prepare_params(payload)
         payload["signature"] = self._get_sign(query_string)
         return self.send_request(http_method, url_path, payload)
+    
+    def sign_request_o(self, http_method, url_path, payload=None):
+        if payload is None:
+            payload = {}
+        payload["timestamp"] = get_timestamp()
+        query_string = self._prepare_params(payload)
+        payload["signature"] = self._get_sign(query_string)
+        return self.send_request_o(http_method, url_path, payload)
 
     def limited_encoded_sign_request(self, http_method, url_path, payload=None):
         """This is used for some endpoints has special symbol in the url.
@@ -106,6 +114,49 @@ class API(object):
             payload = {}
         url = self.base_url + url_path
         self._logger.debug("url: " + url)
+        params = cleanNoneValue(
+            {
+                "url": url,
+                "params": self._prepare_params(payload),
+                "timeout": self.timeout,
+                "proxies": self.proxies,
+            }
+        )
+        response = self._dispatch_request(http_method)(**params)
+        self._logger.debug("raw response from server:" + response.text)
+        self._handle_exception(response)
+
+        try:
+            data = response.json()
+        except ValueError:
+            data = response.text
+        result = {}
+
+        if self.show_limit_usage:
+            limit_usage = {}
+            for key in response.headers.keys():
+                key = key.lower()
+                if (
+                    key.startswith("x-mbx-used-weight")
+                    or key.startswith("x-mbx-order-count")
+                    or key.startswith("x-sapi-used")
+                ):
+                    limit_usage[key] = response.headers[key]
+            result["limit_usage"] = limit_usage
+
+        if self.show_header:
+            result["header"] = response.headers
+
+        if len(result) != 0:
+            result["data"] = data
+            return result
+
+        return data
+    
+    def send_request_o(self, http_method, url_path, payload=None):
+        if payload is None:
+            payload = {}
+        url = "https://eapi.binance.com" + url_path
         params = cleanNoneValue(
             {
                 "url": url,
